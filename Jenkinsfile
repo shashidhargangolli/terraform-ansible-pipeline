@@ -4,8 +4,6 @@ pipeline {
     environment {
         TF_DIR = "terraform"
         ANSIBLE_DIR = "ansible"
-        AWS_ACCESS_KEY_ID     = credentials('aws-access-key-id')
-        AWS_SECRET_ACCESS_KEY = credentials('aws-secret-access-key')
     }
 
     stages {
@@ -17,12 +15,16 @@ pipeline {
 
         stage('Terraform Init & Apply') {
             steps {
-                dir("${TF_DIR}") {
-                    sh '''
-                        terraform init
-                        terraform apply -auto-approve
-                        terraform output -raw public_ip > ../public_ip.txt
-                    '''
+                withCredentials([
+                    [$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'aws-creds']
+                ]) {
+                    dir("${TF_DIR}") {
+                        sh '''
+                            terraform init
+                            terraform apply -auto-approve
+                            terraform output -raw public_ip > public_ip.txt
+                        '''
+                    }
                 }
             }
         }
@@ -30,9 +32,9 @@ pipeline {
         stage('Generate Ansible Inventory') {
             steps {
                 script {
-                    def public_ip = sh(script: "cat public_ip.txt", returnStdout: true).trim()
+                    def publicIp = sh(script: "cat ${TF_DIR}/public_ip.txt", returnStdout: true).trim()
                     writeFile file: "${ANSIBLE_DIR}/inventory", text: """[webservers]
-${public_ip} ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/LinuxKeyPair.pem
+${publicIp} ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/LinuxKeyPair.pem ansible_ssh_common_args='-o StrictHostKeyChecking=no'
 """
                     sh "cat ${ANSIBLE_DIR}/inventory"
                 }
@@ -42,9 +44,7 @@ ${public_ip} ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/LinuxKeyPai
         stage('Run Ansible Playbook') {
             steps {
                 dir("${ANSIBLE_DIR}") {
-                    sh '''
-                        ansible-playbook -i inventory playbook.yml
-                    '''
+                    sh 'ansible-playbook -i inventory playbook.yml'
                 }
             }
         }
