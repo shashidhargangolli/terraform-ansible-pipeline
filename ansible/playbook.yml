@@ -1,0 +1,9 @@
+- name: Install Apache Web Server
+  hosts: all
+  become: yes
+  tasks:
+    - name: Update apt repo and install apache2
+      apt:
+        name: apache2
+        state: present
+
