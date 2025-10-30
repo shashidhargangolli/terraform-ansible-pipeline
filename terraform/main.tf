@@ -47,3 +47,9 @@ resource "aws_instance" "Sha" {
     command = "echo ${self.public_ip} > public_ip.txt"
   }
 }
+
+# ✅ Output public IP for Jenkins and Ansible
+output "public_ip" {
+  description = "Public IP of the created EC2 instance"
+  value       = aws_instance.Sha.public_ip
+}
