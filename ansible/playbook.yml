@@ -2,72 +2,86 @@
 - name: Install and Configure Tomcat 9
   hosts: webservers
   become: yes
+
+  vars:
+    tomcat_version: 9.0.82
+    tomcat_user: tomcat
+    install_dir: /opt/tomcat
+
   tasks:
     - name: Update apt repository
       apt:
         update_cache: yes
 
-    - name: Install Java (required for Tomcat)
+    - name: Install Java 11
       apt:
         name: openjdk-11-jdk
         state: present
 
+    - name: Create Tomcat group
+      group:
+        name: "{{ tomcat_user }}"
+        state: present
+
     - name: Create Tomcat user
       user:
-        name: tomcat
+        name: "{{ tomcat_user }}"
+        group: "{{ tomcat_user }}"
         shell: /bin/false
-        home: /opt/tomcat
+        home: "{{ install_dir }}"
+        system: yes
 
-    - name: Download Tomcat 9
-      get_url:
-        url: https://downloads.apache.org/tomcat/tomcat-9/v9.0.89/bin/apache-tomcat-9.0.89.tar.gz
-        dest: /tmp/apache-tomcat-9.0.89.tar.gz
-
-    - name: Create Tomcat directory
+    - name: Create Tomcat installation directory
       file:
-        path: /opt/tomcat
+        path: "{{ install_dir }}"
         state: directory
-        owner: tomcat
-        group: tomcat
+        owner: "{{ tomcat_user }}"
+        group: "{{ tomcat_user }}"
+
+    - name: Download Tomcat archive
+      get_url:
+        url: "https://dlcdn.apache.org/tomcat/tomcat-9/v{{ tomcat_version }}/bin/apache-tomcat-{{ tomcat_version }}.tar.gz"
+        dest: "/tmp/apache-tomcat-{{ tomcat_version }}.tar.gz"
 
     - name: Extract Tomcat archive
       unarchive:
-        src: /tmp/apache-tomcat-9.0.89.tar.gz
-        dest: /opt/tomcat
+        src: "/tmp/apache-tomcat-{{ tomcat_version }}.tar.gz"
+        dest: "{{ install_dir }}"
         remote_src: yes
         extra_opts: [--strip-components=1]
+        owner: "{{ tomcat_user }}"
+        group: "{{ tomcat_user }}"
 
-    - name: Set permissions for Tomcat directory
+    - name: Update permissions for Tomcat directories
       file:
-        path: /opt/tomcat
-        state: directory
+        path: "{{ install_dir }}"
+        owner: "{{ tomcat_user }}"
+        group: "{{ tomcat_user }}"
         recurse: yes
-        owner: tomcat
-        group: tomcat
 
-    - name: Create systemd service file for Tomcat
+    - name: Create systemd service for Tomcat
       copy:
         dest: /etc/systemd/system/tomcat.service
         content: |
           [Unit]
-          Description=Apache Tomcat Web Application Container
+          Description=Apache Tomcat 9 Web Application Container
           After=network.target
 
           [Service]
           Type=forking
 
-          User=tomcat
-          Group=tomcat
+          User={{ tomcat_user }}
+          Group={{ tomcat_user }}
 
           Environment="JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64"
-          Environment="CATALINA_PID=/opt/tomcat/temp/tomcat.pid"
-          Environment="CATALINA_HOME=/opt/tomcat"
-          Environment="CATALINA_BASE=/opt/tomcat"
+          Environment="CATALINA_PID={{ install_dir }}/temp/tomcat.pid"
+          Environment="CATALINA_HOME={{ install_dir }}"
+          Environment="CATALINA_BASE={{ install_dir }}"
           Environment="CATALINA_OPTS=-Xms512M -Xmx1024M -server -XX:+UseParallelGC"
           Environment="JAVA_OPTS=-Djava.awt.headless=true -Djava.security.egd=file:/dev/./urandom"
 
-          ExecStart=/opt/tomcat/bin/startup.sh
-          ExecStop=/opt/tomcat/bin/shutdown.sh
+          ExecStart={{ install_dir }}/bin/startup.sh
+          ExecStop={{ install_dir }}/bin/shutdown.sh
 
           [Install]
           WantedBy=multi-user.target
@@ -76,15 +90,16 @@
       systemd:
         daemon_reload: yes
 
-    - name: Start and enable Tomcat
+    - name: Enable and start Tomcat service
       systemd:
         name: tomcat
         state: started
         enabled: yes
 
-    - name: Ensure port 8080 is open in UFW (optional, only if UFW is used)
-      ufw:
-        rule: allow
-        port: 8080
-        proto: tcp
-      ignore_errors: yes
+    - name: Verify Tomcat service status
+      shell: systemctl status tomcat | grep Active
+      register: tomcat_status
+      changed_when: false
+
+    - debug:
+        msg: "Tomcat service status: {{ tomcat_status.stdout }}"
