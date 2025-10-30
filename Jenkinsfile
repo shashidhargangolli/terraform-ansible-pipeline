@@ -1,12 +1,11 @@
 pipeline {
-    agent { label 'Terraform' }  // 👈 Runs on the Jenkins agent labeled "Terraform"
+    agent { label 'terraform' }
 
     environment {
-    AWS_ACCESS_KEY_ID     = credentials('aws-access-key-id')
-    AWS_SECRET_ACCESS_KEY = credentials('aws-secret-access-key')
-    AWS_DEFAULT_REGION     = 'ap-south-1'
         TF_DIR = "terraform"
         ANSIBLE_DIR = "ansible"
+        AWS_ACCESS_KEY_ID     = credentials('aws-access-key-id')
+        AWS_SECRET_ACCESS_KEY = credentials('aws-secret-access-key')
     }
 
     stages {
@@ -22,6 +21,7 @@ pipeline {
                     sh '''
                         terraform init
                         terraform apply -auto-approve
+                        terraform output -raw public_ip > ../public_ip.txt
                     '''
                 }
             }
@@ -30,8 +30,11 @@ pipeline {
         stage('Generate Ansible Inventory') {
             steps {
                 script {
-                    def public_ip = sh(script: "cat terraform/public_ip.txt", returnStdout: true).trim()
-                    writeFile file: "${ANSIBLE_DIR}/inventory", text: "[webservers]\\n${public_ip} ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/LinuxKeyPair.pem\\n"
+                    def public_ip = sh(script: "cat public_ip.txt", returnStdout: true).trim()
+                    writeFile file: "${ANSIBLE_DIR}/inventory", text: """[webservers]
+${public_ip} ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/LinuxKeyPair.pem
+"""
+                    sh "cat ${ANSIBLE_DIR}/inventory"
                 }
             }
         }
@@ -49,10 +52,10 @@ pipeline {
 
     post {
         success {
-            echo "✅ Terraform + Ansible pipeline executed successfully!"
+            echo '✅ Terraform & Ansible pipeline executed successfully!'
         }
         failure {
-            echo "❌ Pipeline failed! Check Jenkins logs for details."
+            echo '❌ Pipeline failed! Check Jenkins logs for details.'
         }
     }
 }
