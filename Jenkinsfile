@@ -1,32 +1,42 @@
 pipeline {
-    agent { label 'Terraform' }  // your agent label here
+    agent any
 
     environment {
-        AWS_ACCESS_KEY_ID     = credentials('aws-access-key-id')
-        AWS_SECRET_ACCESS_KEY = credentials('aws-secret-access-key')
-        AWS_DEFAULT_REGION     = 'ap-south-1'
+        TF_DIR = "terraform"
+        ANSIBLE_DIR = "ansible"
     }
 
     stages {
         stage('Checkout') {
             steps {
-                git branch: 'main', credentialsId: 'github-credentials', url: 'https://github.com/shashidhargangolli/terraform-ansible-pipeline.git'
+                git branch: 'main', url: 'https://github.com/<your-username>/terraform-ansible-pipeline.git'
             }
         }
 
-        stage('Terraform Apply') {
+        stage('Terraform Init & Apply') {
             steps {
-                dir('terraform') {
-                    sh 'terraform init'
-                    sh 'terraform apply -auto-approve'
+                dir("${TF_DIR}") {
+                    sh '''
+                        terraform init
+                        terraform apply -auto-approve
+                    '''
                 }
             }
         }
 
-        stage('Run Ansible') {
+        stage('Generate Ansible Inventory') {
             steps {
-                dir('ansible') {
-                    sh 'ansible-playbook -i inventory.j2 playbook.yml'
+                script {
+                    def public_ip = sh(script: "cat terraform/public_ip.txt", returnStdout: true).trim()
+                    writeFile file: "${ANSIBLE_DIR}/inventory", text: "[webservers]\n${public_ip} ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/LinuxKeyPair.pem\n"
+                }
+            }
+        }
+
+        stage('Run Ansible Playbook') {
+            steps {
+                dir("${ANSIBLE_DIR}") {
+                    sh 'ansible-playbook -i inventory playbook.yml'
                 }
             }
         }
