@@ -2,29 +2,89 @@
 - name: Install and Configure Tomcat 9
   hosts: webservers
   become: yes
-
   tasks:
-    - name: Update apt cache
+    - name: Update apt repository
       apt:
         update_cache: yes
 
-    - name: Install Java
+    - name: Install Java (required for Tomcat)
       apt:
         name: openjdk-11-jdk
         state: present
 
+    - name: Create Tomcat user
+      user:
+        name: tomcat
+        shell: /bin/false
+        home: /opt/tomcat
+
     - name: Download Tomcat 9
       get_url:
-        url: https://downloads.apache.org/tomcat/tomcat-9/v9.0.94/bin/apache-tomcat-9.0.94.tar.gz
-        dest: /tmp/apache-tomcat-9.0.94.tar.gz
+        url: https://downloads.apache.org/tomcat/tomcat-9/v9.0.89/bin/apache-tomcat-9.0.89.tar.gz
+        dest: /tmp/apache-tomcat-9.0.89.tar.gz
 
-    - name: Extract Tomcat
+    - name: Create Tomcat directory
+      file:
+        path: /opt/tomcat
+        state: directory
+        owner: tomcat
+        group: tomcat
+
+    - name: Extract Tomcat archive
       unarchive:
-        src: /tmp/apache-tomcat-9.0.94.tar.gz
+        src: /tmp/apache-tomcat-9.0.89.tar.gz
         dest: /opt/tomcat
         remote_src: yes
         extra_opts: [--strip-components=1]
-        creates: /opt/tomcat/bin/startup.sh
 
-    - name: Start Tomcat
-      command: nohup /opt/tomcat/bin/startup.sh
+    - name: Set permissions for Tomcat directory
+      file:
+        path: /opt/tomcat
+        state: directory
+        recurse: yes
+        owner: tomcat
+        group: tomcat
+
+    - name: Create systemd service file for Tomcat
+      copy:
+        dest: /etc/systemd/system/tomcat.service
+        content: |
+          [Unit]
+          Description=Apache Tomcat Web Application Container
+          After=network.target
+
+          [Service]
+          Type=forking
+
+          User=tomcat
+          Group=tomcat
+
+          Environment="JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64"
+          Environment="CATALINA_PID=/opt/tomcat/temp/tomcat.pid"
+          Environment="CATALINA_HOME=/opt/tomcat"
+          Environment="CATALINA_BASE=/opt/tomcat"
+          Environment="CATALINA_OPTS=-Xms512M -Xmx1024M -server -XX:+UseParallelGC"
+          Environment="JAVA_OPTS=-Djava.awt.headless=true -Djava.security.egd=file:/dev/./urandom"
+
+          ExecStart=/opt/tomcat/bin/startup.sh
+          ExecStop=/opt/tomcat/bin/shutdown.sh
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Reload systemd daemon
+      systemd:
+        daemon_reload: yes
+
+    - name: Start and enable Tomcat
+      systemd:
+        name: tomcat
+        state: started
+        enabled: yes
+
+    - name: Ensure port 8080 is open in UFW (optional, only if UFW is used)
+      ufw:
+        rule: allow
+        port: 8080
+        proto: tcp
+      ignore_errors: yes
