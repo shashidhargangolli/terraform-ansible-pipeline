@@ -1,2 +1,2 @@
 [webservers]
-<your_public_ip> ansible_user=ubuntu ansible_ssh_private_key_file=/home/devopsadmin/.ssh/LinuxKeyPair.pem
+{{ public_ip }} ansible_user=ubuntu ansible_ssh_private_key_file=/home/devopsadmin/.ssh/LinuxKeyPair.pem
