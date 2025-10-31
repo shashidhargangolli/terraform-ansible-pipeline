@@ -15,9 +15,10 @@ pipeline {
         }
 
         stage('Terraform Init & Apply') {
-            steps {
-                dir('terraform') {
+            dir('terraform') {
+                steps {
                     sh '''
+                        echo "✅ Initializing and Applying Terraform..."
                         terraform init
                         terraform apply -auto-approve
                         terraform output -raw public_ip > public_ip.txt
@@ -29,11 +30,11 @@ pipeline {
         stage('Generate Ansible Inventory') {
             steps {
                 script {
-                    // Read public IP from Terraform output
+                    // Read Terraform output
                     def publicIp = readFile('terraform/public_ip.txt').trim()
                     echo "✅ Generated public IP: ${publicIp}"
 
-                    // Write inventory dynamically
+                    // Write inventory file for Ansible
                     writeFile(
                         file: 'ansible/inventory',
                         text: """[webservers]
@@ -41,17 +42,18 @@ ${publicIp} ansible_user=ubuntu ansible_ssh_private_key_file=/var/lib/jenkins/Li
 """
                     )
 
-                    // Display generated inventory
+                    // Show inventory for debugging
                     sh 'echo "✅ Generated Inventory:" && cat ansible/inventory'
                 }
             }
         }
 
         stage('Run Ansible Playbook') {
-            steps {
-                dir('ansible') {
+            dir('ansible') {
+                steps {
                     sh '''
                         echo "✅ Running Ansible Playbook..."
+                        export ANSIBLE_HOST_KEY_CHECKING=False
                         ansible-playbook -i inventory playbook.yml
                     '''
                 }
@@ -62,16 +64,8 @@ ${publicIp} ansible_user=ubuntu ansible_ssh_private_key_file=/var/lib/jenkins/Li
             steps {
                 script {
                     def publicIp = readFile('terraform/public_ip.txt').trim()
-                    echo "🌐 Checking Tomcat at: http://${publicIp}:8080"
-
-                    // Wait a few seconds for Tomcat to start
-                    sh '''
-                        sleep 15
-                        echo "✅ Trying to connect to Tomcat..."
-                    '''
-
-                    // Curl Tomcat home page
-                    sh "curl -I http://${publicIp}:8080 || echo '⚠️ Tomcat may not be reachable yet'"
+                    echo "🌐 Checking Tomcat service on ${publicIp}:8080 ..."
+                    sh "curl -I http://${publicIp}:8080 || echo 'Tomcat not reachable yet.'"
                 }
             }
         }
@@ -79,10 +73,10 @@ ${publicIp} ansible_user=ubuntu ansible_ssh_private_key_file=/var/lib/jenkins/Li
 
     post {
         success {
-            echo '✅ Pipeline executed successfully and Tomcat verified!'
+            echo '✅ Pipeline executed successfully! Tomcat should now be running on port 8080.'
         }
         failure {
-            echo '❌ Pipeline failed. Check Jenkins logs for the stage that failed.'
+            echo '❌ Pipeline failed. Check Jenkins logs for errors.'
         }
     }
 }
