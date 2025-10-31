@@ -1,11 +1,10 @@
-pipeline {
+ pipeline {
     agent { label 'Terraform' }
 
     environment {
-        TF_DIR = "terraform"
-        ANSIBLE_DIR = "ansible"
         AWS_ACCESS_KEY_ID     = credentials('aws-access-key-id')
         AWS_SECRET_ACCESS_KEY = credentials('aws-secret-access-key')
+        AWS_DEFAULT_REGION     = 'ap-south-1'
     }
 
     stages {
@@ -16,13 +15,12 @@ pipeline {
         }
 
         stage('Terraform Init & Apply') {
-            steps {
-                dir("${TF_DIR}") {
+            dir('terraform') {
+                steps {
                     sh '''
-                        export AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID
-                        export AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY
                         terraform init
                         terraform apply -auto-approve
+                        terraform output -raw public_ip > public_ip.txt
                     '''
                 }
             }
@@ -31,27 +29,43 @@ pipeline {
         stage('Generate Ansible Inventory') {
             steps {
                 script {
-                    def public_ip = sh(script: "cat terraform/public_ip.txt", returnStdout: true).trim()
-                    writeFile file: "${ANSIBLE_DIR}/inventory", text: "[webservers]\\n${public_ip} ansible_user=ubuntu ansible_ssh_private_key_file=/var/lib/jenkins/LinuxKeyPair.pem\\n"
+                    // Read Terraform output
+                    def publicIp = readFile('terraform/public_ip.txt').trim()
+                    echo "✅ Generated public IP: ${publicIp}"
+
+                    // Write proper multiline inventory file
+                    writeFile(
+                        file: 'ansible/inventory',
+                        text: """[webservers]
+${publicIp} ansible_user=ubuntu ansible_ssh_private_key_file=/var/lib/jenkins/LinuxKeyPair.pem
+"""
+                    )
+
+                    // Display generated inventory for debug
+                    sh 'cat ansible/inventory'
                 }
             }
         }
 
         stage('Run Ansible Playbook') {
-            steps {
-                dir("${ANSIBLE_DIR}") {
-                    sh 'ansible-playbook -i inventory playbook.yml'
+            dir('ansible') {
+                steps {
+                    sh '''
+                        echo "✅ Using inventory file:"
+                        cat inventory
+                        ansible-playbook -i inventory playbook.yml
+                    '''
                 }
             }
         }
     }
 
     post {
-        failure {
-            echo "❌ Pipeline failed! Check Jenkins logs for details."
-        }
         success {
-            echo "✅ Pipeline executed successfully!"
+            echo '✅ Pipeline executed successfully!'
+        }
+        failure {
+            echo '❌ Pipeline failed. Check the logs for errors.'
         }
     }
 }
