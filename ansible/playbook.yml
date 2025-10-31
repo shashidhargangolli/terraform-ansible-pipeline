@@ -4,7 +4,7 @@
   become: yes
 
   vars:
-    tomcat_version: 9.0.82
+    tomcat_version: 9.0.97
     tomcat_user: tomcat
     install_dir: /opt/tomcat
 
@@ -37,11 +37,13 @@
         state: directory
         owner: "{{ tomcat_user }}"
         group: "{{ tomcat_user }}"
+        mode: '0755'
 
     - name: Download Tomcat archive
       get_url:
         url: "https://dlcdn.apache.org/tomcat/tomcat-9/v{{ tomcat_version }}/bin/apache-tomcat-{{ tomcat_version }}.tar.gz"
         dest: "/tmp/apache-tomcat-{{ tomcat_version }}.tar.gz"
+        mode: '0644'
 
     - name: Extract Tomcat archive
       unarchive:
@@ -52,7 +54,7 @@
         owner: "{{ tomcat_user }}"
         group: "{{ tomcat_user }}"
 
-    - name: Update permissions for Tomcat directories
+    - name: Set permissions for Tomcat directory
       file:
         path: "{{ install_dir }}"
         owner: "{{ tomcat_user }}"
@@ -69,7 +71,6 @@
 
           [Service]
           Type=forking
-
           User={{ tomcat_user }}
           Group={{ tomcat_user }}
 
@@ -102,4 +103,4 @@
       changed_when: false
 
     - debug:
-        msg: "Tomcat service status: {{ tomcat_status.stdout }}"
+        msg: "✅ Tomcat service status: {{ tomcat_status.stdout }}"
