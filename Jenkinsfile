@@ -11,6 +11,7 @@ pipeline {
 
         stage('Checkout') {
             steps {
+                echo "✅ Cloning repository..."
                 git branch: 'main', url: 'https://github.com/shashidhargangolli/terraform-ansible-pipeline.git'
             }
         }
@@ -20,8 +21,8 @@ pipeline {
                 dir('terraform') {
                     sh '''
                         echo "✅ Initializing and Applying Terraform..."
-                        terraform init
-                        terraform apply -auto-approve
+                        terraform init -input=false
+                        terraform apply -auto-approve -input=false
                         terraform output -raw public_ip > public_ip.txt
                     '''
                 }
@@ -31,20 +32,15 @@ pipeline {
         stage('Generate Ansible Inventory') {
             steps {
                 script {
-                    // Read Terraform output
                     def publicIp = readFile('terraform/public_ip.txt').trim()
                     echo "✅ Generated public IP: ${publicIp}"
 
-                    // Create inventory file for Ansible
-                    writeFile(
-                        file: 'ansible/inventory',
-                        text: """[webservers]
+                    writeFile file: 'ansible/inventory', text: """[webservers]
 ${publicIp} ansible_user=ubuntu ansible_ssh_private_key_file=/var/lib/jenkins/LinuxKeyPair.pem
 """
-                    )
 
-                    // Display inventory for debugging
-                    sh 'echo "✅ Generated Inventory:" && cat ansible/inventory'
+                    echo "✅ Generated Inventory File:"
+                    sh 'cat ansible/inventory'
                 }
             }
         }
