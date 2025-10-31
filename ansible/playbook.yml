@@ -4,7 +4,7 @@
   become: yes
 
   vars:
-    tomcat_version: 9.0.97
+    tomcat_version: 9.0.111
     tomcat_user: tomcat
     install_dir: /opt/tomcat
 
